@@ -1,7 +1,2 @@
-__pycache__
-**/.terraform
-**/*.tfstate
-**/*.tfstate.backup
-**/*.tfplan
-**/*.tfvars
-.terraform.lock.hcl
+id_rsa*
+ssh-metadata
