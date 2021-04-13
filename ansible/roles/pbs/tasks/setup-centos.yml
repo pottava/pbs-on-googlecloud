@@ -1,0 +1,14 @@
+pbs_packages_to_build:
+  - libXt-devel
+  - postgresql-devel
+  - expat-devel
+  - libedit-devel
+  - libical-devel
+  - swig
+  - tcl-devel
+  - tk-devel
+  - python-devel
+  - libtool
+  - autoconf
+  - automake
+pbs_packages_to_run: []

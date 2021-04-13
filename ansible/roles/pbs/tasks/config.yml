@@ -1,0 +1,56 @@
+- name: Install prerequisite packages to run
+  package:
+    name: "{{ pbs_packages_to_run }}"
+
+- name: Rewrite pbs.conf to enable or disable PBS server, scheduler, communcator and mom
+  lineinfile:
+    path: "/etc/pbs.conf"
+    state: "present"
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.replace }}"
+  with_items:
+    - {regexp: "^PBS_SERVER=", replace: "PBS_SERVER={{ pbs_server_hostname }}"}
+    - {regexp: "^PBS_START_MOM=", replace: "PBS_START_MOM={{ (not pbs_run_job_on_server) | ternary('0','1') }}"}
+    - {regexp: "^PBS_START_SERVER=", replace: "PBS_START_SERVER={{ pbs_server | ternary('1','0') }}"}
+    - {regexp: "^PBS_START_SCHED=",  replace: "PBS_START_SCHED={{ pbs_server | ternary('1','0') }}"}
+    - {regexp: "^PBS_START_COMM=",   replace: "PBS_START_COMM={{ pbs_server | ternary('1','0') }}"}
+
+- name: Set the proper timezone
+  lineinfile:
+    path: /var/spool/pbs/pbs_environment
+    line: TZ="Asia/Tokyo"
+
+- name: Use cp if /home was mounted
+  lineinfile:
+    path: /var/spool/pbs/mom_priv/config
+    line: $usecp *:/home/ /home/
+
+- name: Set file permissions
+  file:
+    mode: "{{ item.mode }}"
+    path: "{{ item.path }}"
+  with_items:
+    - { mode: "04755", path: "{{ pbs_prefix }}/sbin/pbs_iff" }
+    - { mode: "04755", path: "{{ pbs_prefix }}/sbin/pbs_rcp" }
+    - { mode: "0700",  path: "{{ pbs_prefix }}/bin/pbs_topologyinfo" }
+    - { mode: "0700",  path: "{{ pbs_prefix }}/sbin/pbs_mom" }
+    - { mode: "0700",  path: "{{ pbs_prefix }}/sbin/pbs_sched" }
+    - { mode: "0700",  path: "{{ pbs_prefix }}/sbin/pbs_server" }
+    - { mode: "0755",  path: "{{ pbs_prefix }}/bin/nqs2pbs" }
+
+- name: Install PostgreSQL
+  package:
+    name: "{{ item }}"
+    state: latest
+  with_items:
+    - postgresql-server
+    - postgresql-devel
+    - postgresql-contrib
+    - python-psycopg2
+
+- name: PostgreSQL initialize DB
+  shell: postgresql-setup initdb
+  ignore_errors: true
+
+- name: Start PBS servers
+  command: /etc/init.d/pbs start

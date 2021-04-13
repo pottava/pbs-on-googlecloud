@@ -1,0 +1,6 @@
+[login]
+localhost ansible_connection=local
+
+[head]
+
+[compute]

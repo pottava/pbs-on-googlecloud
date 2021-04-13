@@ -1,0 +1,15 @@
+- name: include OS specific vars
+  include_vars: "{{ item }}"
+  with_first_found:
+    - files:
+      - "setup-{{ ansible_distribution | lower }}-{{ ansible_distribution_major_version }}.yml"
+      - "setup-{{ ansible_distribution | lower }}.yml"
+      - "setup-{{ ansible_os_family | lower }}-{{ ansible_distribution_major_version }}.yml"
+      - "setup-{{ ansible_os_family | lower }}.yml"
+      - "setup.yml"
+
+- name: Build OpenPBS
+  include_tasks: build.yml
+
+- name: Make OpenPBS configurations
+  include_tasks: config.yml

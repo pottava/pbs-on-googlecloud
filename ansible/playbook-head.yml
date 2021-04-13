@@ -1,0 +1,8 @@
+---
+- hosts: head
+  become: true
+  roles:
+    - role: common
+    - role: pbs
+      pbs_server: True
+      pbs_run_job_on_server: False
