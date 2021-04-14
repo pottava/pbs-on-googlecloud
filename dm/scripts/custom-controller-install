@@ -2,15 +2,12 @@
 
 # Download source code
 mkdir -p /apps/infra && cd "$_" || exit 1
-git clone https://github.com/pottava/pbs-on-googlecloud.git
-cd pbs-on-googlecloud || exit 1
+git clone --depth 1 https://github.com/pottava/pbs-on-googlecloud.git
+cd pbs-on-googlecloud/ansible || exit 1
 
-# Configure SSH for root user
-ssh-keygen -t rsa -b 2048 -N "" -f /root/.ssh/id_rsa -q -C root
+# SSH configurations for Ansible
+ssh-keygen -t rsa -b 4096 -N "" -f /root/.ssh/id_rsa -q -C root
 cat /root/.ssh/id_rsa.pub > /root/.ssh/authorized_keys
-chmod 600 /root/.ssh/id_rsa
-chmod 600 /root/.ssh/authorized_keys
-
 cat << EOF > /root/.ssh/config
 Host *
 StrictHostKeyChecking no
@@ -19,42 +16,60 @@ EOF
 chmod 600 /root/.ssh/config
 chmod 700 /root/.ssh
 
+meta_endpoint='http://metadata.google.internal/computeMetadata/v1/instance'
+zone=$( basename $( curl -s -H "Metadata-Flavor: Google" "${meta_endpoint}/zone" ))
+cluster=$( curl -s -H "Metadata-Flavor: Google" "${meta_endpoint}/attributes/cluster-name" )
+sed "s/ssh-rsa/root:ssh-rsa/" /root/.ssh/id_rsa.pub > ssh-metadata
+
+gcloud compute instances add-metadata "${cluster}-login0" --zone "${zone}" \
+    --metadata-from-file ssh-keys=ssh-metadata
+for node in $( gcloud compute instances list \
+    --filter "name~'${cluster}-compute.*' AND STATUS:RUNNING" --format 'value(name)' ); do
+  gcloud compute instances add-metadata "${node}" --zone "${zone}" \
+      --metadata-from-file ssh-keys=ssh-metadata
+done
+
+yum install -y ansible
+
 # Make hostfiles
 ansible_hosts="inventories/hpc/hosts"
 mpi_hostfile="/apps/hostfile"
 
-echo '' > ssh_config
-printf '[login]\nlocalhost ansible_connection=local\n\n[head]\n' > "${ansible_hosts}"
+cat << EOF > inventories/hpc/group_vars/all.yml
+---
+pbs_server_hostname: ${cluster}-controller
+EOF
+cat << EOF > ${ansible_hosts}
+[login]
+${cluster}-login0
+
+[head]
+localhost ansible_connection=local
+
+[compute]
+EOF
 rm -rf "${mpi_hostfile}" && touch "$_"
+cat << EOF > ssh_config
+Host ${cluster}-login0
+  User root
+  HostName ${cluster}-login0
+  IdentityFile /root/.ssh/id_rsa
+  StrictHostKeyChecking no
+  UserKnownHostsFile /dev/null
 
+EOF
 for node in $( gcloud compute instances list \
-    --filter "name~'hpc-controller' AND STATUS:RUNNING" \
-    --format="value(INTERNAL_IP)" ); do
-  echo "hpc-controller" >> "${ansible_hosts}"
-  cat << EOT >> ssh_config
-Host hpc-controller
+    --filter "name~'${cluster}-compute.*' AND STATUS:RUNNING" \
+    --format 'value(name)' ); do
+  echo "${node}" >> "${ansible_hosts}"
+  echo "${node}" >> "${mpi_hostfile}"
+  cat << EOF >> ssh_config
+Host ${node}
   User root
   HostName ${node}
   IdentityFile /root/.ssh/id_rsa
   StrictHostKeyChecking no
   UserKnownHostsFile /dev/null
-EOT
-done
 
-printf '\n[compute]\n' >> "${ansible_hosts}"
-for node in $( gcloud compute instances list \
-    --filter "name~'hpc-compute.*' AND STATUS:RUNNING" \
-    --format="value(INTERNAL_IP)" ); do
-  worker_hostname=$( ssh -i /root/.ssh/id_rsa "${node}" hostname 2>/dev/null )
-  echo "${worker_hostname}" >> "${ansible_hosts}"
-  echo "${worker_hostname}" >> "${mpi_hostfile}"
-  cat << EOT >> ssh_config
-
-Host ${worker_hostname}
-  User root
-  HostName ${node}
-  IdentityFile /root/.ssh/id_rsa
-  StrictHostKeyChecking no
-  UserKnownHostsFile /dev/null
-EOT
+EOF
 done

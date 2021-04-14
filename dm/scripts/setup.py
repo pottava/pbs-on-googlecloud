@@ -65,71 +65,21 @@ dirs = NSDict({n: Path(p) for n, p in dict.items({
     'home': '/home',
     'apps': '/apps',
     'scripts': '/slurm/scripts',
-    'slurm': '/slurm',
     'prefix': '/usr/local',
-    'munge': '/etc/munge',
     'secdisk': '/mnt/disks/sec',
+    'apps_sec': '/mnt/disks/sec/apps',
 })})
-
-slurmdirs = NSDict({n: Path(p) for n, p in dict.items({
-    'etc': '/usr/local/etc/slurm',
-    'log': '/var/log/slurm',
-    'state': '/var/spool/slurm',
-})})
-
-cfg['log_dir'] = slurmdirs.log
-cfg['slurm_cmd_path'] = dirs.prefix/'bin'
 
 RESUME_TIMEOUT = 300
 SUSPEND_TIMEOUT = 300
 
 CONTROL_MACHINE = cfg.cluster_name + '-controller'
 
-MOTD_HEADER = """
-
-                                 SSSSSSS
-                                SSSSSSSSS
-                                SSSSSSSSS
-                                SSSSSSSSS
-                        SSSS     SSSSSSS     SSSS
-                       SSSSSS               SSSSSS
-                       SSSSSS    SSSSSSS    SSSSSS
-                        SSSS    SSSSSSSSS    SSSS
-                SSS             SSSSSSSSS             SSS
-               SSSSS    SSSS    SSSSSSSSS    SSSS    SSSSS
-                SSS    SSSSSS   SSSSSSSSS   SSSSSS    SSS
-                       SSSSSS    SSSSSSS    SSSSSS
-                SSS    SSSSSS               SSSSSS    SSS
-               SSSSS    SSSS     SSSSSSS     SSSS    SSSSS
-          S     SSS             SSSSSSSSS             SSS     S
-         SSS            SSSS    SSSSSSSSS    SSSS            SSS
-          S     SSS    SSSSSS   SSSSSSSSS   SSSSSS    SSS     S
-               SSSSS   SSSSSS   SSSSSSSSS   SSSSSS   SSSSS
-          S    SSSSS    SSSS     SSSSSSS     SSSS    SSSSS    S
-    S    SSS    SSS                                   SSS    SSS    S
-    S     S                                                   S     S
-                SSS
-                SSS
-                SSS
-                SSS
- SSSSSSSSSSSS   SSS   SSSS       SSSS    SSSSSSSSS   SSSSSSSSSSSSSSSSSSSS
-SSSSSSSSSSSSS   SSS   SSSS       SSSS   SSSSSSSSSS  SSSSSSSSSSSSSSSSSSSSSS
-SSSS            SSS   SSSS       SSSS   SSSS        SSSS     SSSS     SSSS
-SSSS            SSS   SSSS       SSSS   SSSS        SSSS     SSSS     SSSS
-SSSSSSSSSSSS    SSS   SSSS       SSSS   SSSS        SSSS     SSSS     SSSS
- SSSSSSSSSSSS   SSS   SSSS       SSSS   SSSS        SSSS     SSSS     SSSS
-         SSSS   SSS   SSSS       SSSS   SSSS        SSSS     SSSS     SSSS
-         SSSS   SSS   SSSS       SSSS   SSSS        SSSS     SSSS     SSSS
-SSSSSSSSSSSSS   SSS   SSSSSSSSSSSSSSS   SSSS        SSSS     SSSS     SSSS
-SSSSSSSSSSSS    SSS    SSSSSSSSSSSSS    SSSS        SSSS     SSSS     SSSS
-
-
-"""
 
 
 def start_motd():
     """ advise in motd that slurm is currently configuring """
-    msg = MOTD_HEADER + """
+    msg = """
 *** Slurm is currently being configured in the background. ***
 """
     Path('/etc/motd').write_text(msg)
@@ -138,7 +88,7 @@ def start_motd():
 
 def end_motd(broadcast=True):
     """ modify motd to signal that setup is complete """
-    Path('/etc/motd').write_text(MOTD_HEADER)
+    Path('/etc/motd').write_text("")
 
     if not broadcast:
         return
@@ -224,153 +174,12 @@ def expand_machine_type():
 # END expand_machine_type()
 
 
-def install_slurm_conf():
-    """ install slurm.conf """
-    machines = expand_machine_type()
-
-    if cfg.ompi_version:
-        mpi_default = "pmi2"
-    else:
-        mpi_default = "none"
-
-    conf_options = {
-        'name': cfg.cluster_name,
-        'control_host': CONTROL_MACHINE,
-        'scripts': dirs.scripts,
-        'slurmlog': slurmdirs.log,
-        'state_save': slurmdirs.state,
-        'resume_timeout': RESUME_TIMEOUT,
-        'suspend_timeout': SUSPEND_TIMEOUT,
-        'suspend_time': cfg.suspend_time,
-        'mpi_default': mpi_default,
-    }
-    conf_resp = util.get_metadata('attributes/slurm_conf_tpl')
-    conf = conf_resp.format(**conf_options)
-
-    static_nodes = []
-    for i, (pid, machine) in enumerate(machines.items()):
-        part = cfg.instance_defs[pid]
-        static_range = ''
-        if part.static_node_count:
-            if part.static_node_count > 1:
-                static_range = '{}-[0-{}]'.format(
-                    pid, part.static_node_count - 1)
-            else:
-                static_range = f"{pid}-0"
-
-        cloud_range = ""
-        if (part.max_node_count and
-                (part.max_node_count != part.static_node_count)):
-            cloud_range = "{}-[{}-{}]".format(
-                pid, part.static_node_count,
-                part.max_node_count - 1)
-
-        conf += ("NodeName=DEFAULT "
-                 f"CPUs={machine['cpus']} "
-                 f"RealMemory={machine['memory']} "
-                 "State=UNKNOWN")
-        conf += '\n'
-
-        # Nodes
-        gres = ""
-        if part.gpu_count:
-            gres = " Gres=gpu:" + str(part.gpu_count)
-        if static_range:
-            static_nodes.append(static_range)
-            conf += f"NodeName={static_range}{gres}\n"
-
-        if cloud_range:
-            conf += f"NodeName={cloud_range} State=CLOUD{gres}\n"
-
-        # instance_defs
-        part_nodes = f'{pid}-[0-{part.max_node_count - 1}]'
-
-        def_mem_per_cpu = max(100, machine['memory'] // machine['cpus'])
-
-        conf += ("PartitionName={} Nodes={} MaxTime=INFINITE "
-                 "State=UP DefMemPerCPU={} LLN=yes"
-                 .format(part.name, part_nodes,
-                         def_mem_per_cpu))
-        if part.exclusive:
-            conf += " Oversubscribe=Exclusive"
-
-        # First partition specified is treated as the default partition
-        if i == 0:
-            conf += " Default=YES"
-        conf += "\n\n"
-
-    if len(static_nodes):
-        conf += "\nSuspendExcNodes={}\n".format(','.join(static_nodes))
-
-    conf_file = slurmdirs.etc/'slurm.conf'
-    conf_file.write_text(conf)
-    shutil.chown(conf_file, user='slurm', group='slurm')
-# END install_slurm_conf()
-
-
-def install_slurmdbd_conf():
-    """ install slurmdbd.conf """
-    conf_options = NSDict({
-        'control_host': CONTROL_MACHINE,
-        'slurmlog': slurmdirs.log,
-        'state_save': slurmdirs.state,
-        'db_name': 'slurm_acct_db',
-        'db_user': 'slurm',
-        'db_pass': '""',
-        'db_host': 'localhost',
-        'db_port': '3306'
-    })
-    if cfg.cloudsql:
-        conf_options.db_name = cfg.cloudsql.db_name
-        conf_options.db_user = cfg.cloudsql.user
-        conf_options.db_pass = cfg.cloudsql.password
-
-        db_host_str = cfg.cloudsql.server_ip.split(':')
-        conf_options.db_host = db_host_str[0]
-        conf_options.db_port = db_host_str[1] if len(db_host_str) >= 2 else '3306'
-
-    conf_resp = util.get_metadata('attributes/slurmdbd_conf_tpl')
-    conf = conf_resp.format(**conf_options)
-
-    conf_file = slurmdirs.etc/'slurmdbd.conf'
-    conf_file.write_text(conf)
-    shutil.chown(conf_file, user='slurm', group='slurm')
-    conf_file.chmod(0o600)
-# END install_slurmdbd_conf()
-
-
-def install_cgroup_conf():
-    """ install cgroup.conf """
-    conf = util.get_metadata('attributes/cgroup_conf_tpl')
-
-    conf_file = slurmdirs.etc/'cgroup.conf'
-    conf_file.write_text(conf)
-    shutil.chown(conf_file, user='slurm', group='slurm')
-
-    gpu_conf = ""
-    for pid, part in cfg.instance_defs.items():
-        if not part.gpu_count:
-            continue
-        driver_range = '0'
-        if part.gpu_count > 1:
-            driver_range = '[0-{}]'.format(part.gpu_count-1)
-
-        gpu_conf += ("NodeName={}-[0-{}] Name=gpu File=/dev/nvidia{}\n"
-                     .format(pid, part.max_node_count - 1, driver_range))
-    if gpu_conf:
-        (slurmdirs.etc/'gres.conf').write_text(gpu_conf)
-# END install_cgroup_conf()
-
-
 def install_meta_files():
     """ save config.yaml and download all scripts from metadata """
+    Path(dirs.scripts).mkdirp()
     cfg.save_config(dirs.scripts/'config.yaml')
-    shutil.chown(dirs.scripts/'config.yaml', user='slurm', group='slurm')
 
     meta_entries = [
-        ('suspend.py', 'slurm-suspend'),
-        ('resume.py', 'slurm-resume'),
-        ('slurmsync.py', 'slurmsync'),
         ('util.py', 'util-script'),
         ('setup.py', 'setup-script'),
         ('startup.sh', 'startup-script'),
@@ -385,7 +194,6 @@ def install_meta_files():
         path = dirs.scripts/filename
         path.write_text(text)
         path.chmod(0o755)
-        shutil.chown(path, user='slurm', group='slurm')
 
     with ThreadPoolExecutor() as exe:
         exe.map(lambda x: install_metafile(*x), meta_entries)
@@ -400,10 +208,9 @@ def prepare_network_mounts(hostname, instance_type):
     log.info("Set up network storage")
 
     default_mounts = (
-        slurmdirs.etc,
-        dirs.munge,
         dirs.home,
         dirs.apps,
+        dirs.apps_sec,
     )
 
     # create dict of mounts, local_mount: mount_info
@@ -548,7 +355,7 @@ def setup_nfs_exports():
 
     exportsd = Path('/etc/exports.d')
     exportsd.mkdirp()
-    with (exportsd/'slurm.exports').open('w') as f:
+    with (exportsd/'cluster.exports').open('w') as f:
         f.write('\n')
         f.write('\n'.join(exports))
     util.run("exportfs -a")
@@ -559,6 +366,7 @@ def setup_secondary_disks():
     """ Format and mount secondary disk """
     util.run(
         "sudo mkfs.ext4 -m 0 -F -E lazy_itable_init=0,lazy_journal_init=0,discard /dev/sdb")
+    Path(dirs.secdisk).mkdirp()
     with open('/etc/fstab', 'a') as f:
         f.write(
             "\n/dev/sdb     {0}     ext4    discard,defaults,nofail     0 2"
@@ -567,80 +375,9 @@ def setup_secondary_disks():
 # END setup_secondary_disks()
 
 
-def setup_sync_cronjob():
-    """ Create cronjob for running slurmsync.py """
-    util.run("crontab -u slurm -", input=(
-        f"*/1 * * * * {dirs.scripts}/slurmsync.py\n"))
-
-# END setup_sync_cronjob()
-
-
-def setup_jwt_key():
-    jwt_key = slurmdirs.state/'jwt_hs256.key'
-
-    if cfg.jwt_key:
-        with (jwt_key).open('w') as f:
-            f.write(cfg.jwt_key)
-    else:
-        util.run("dd if=/dev/urandom bs=32 count=1 >"+str(jwt_key), shell=True)
-
-    util.run(f"chown -R slurm:slurm {jwt_key}")
-    jwt_key.chmod(0o400)
-
-
-def setup_slurmd_cronjob():
-    """ Create cronjob for keeping slurmd service up """
-    util.run(
-        "crontab -u root -", input=(
-            "*/2 * * * * "
-            "if [ `systemctl status slurmd | grep -c inactive` -gt 0 ]; then "
-            "mount -a; "
-            "systemctl restart munge; "
-            "systemctl restart slurmd; "
-            "fi\n"
-        ))
-# END setup_slurmd_cronjob()
-
-
-def setup_nss_slurm():
-    """ install and configure nss_slurm """
-    # setup nss_slurm
-    Path('/var/spool/slurmd').mkdirp()
-    util.run("ln -s {}/lib/libnss_slurm.so.2 /usr/lib64/libnss_slurm.so.2"
-             .format(dirs.prefix))
-    util.run(
-        r"sed -i 's/\(^\(passwd\|group\):\s\+\)/\1slurm /g' /etc/nsswitch.conf"
-    )
-# END setup_nss_slurm()
-
-
-def configure_dirs():
-
-    for p in dirs.values():
-        p.mkdirp()
-    shutil.chown(dirs.slurm, user='slurm', group='slurm')
-    shutil.chown(dirs.scripts, user='slurm', group='slurm')
-
-    for p in slurmdirs.values():
-        p.mkdirp()
-        shutil.chown(p, user='slurm', group='slurm')
-
-    (dirs.scripts/'etc').symlink_to(slurmdirs.etc)
-    shutil.chown(dirs.scripts/'etc', user='slurm', group='slurm')
-
-    (dirs.scripts/'log').symlink_to(slurmdirs.log)
-    shutil.chown(dirs.scripts/'log', user='slurm', group='slurm')
-
-
 def setup_controller():
     """ Run controller setup """
     expand_instance_templates()
-    install_cgroup_conf()
-    install_slurm_conf()
-    install_slurmdbd_conf()
-    setup_jwt_key()
-    util.run("create-munge-key -f")
-    util.run("systemctl restart munge")
 
     if cfg.controller_secondary_disk:
         setup_secondary_disks()
@@ -653,46 +390,11 @@ def setup_controller():
         # Ignore blank files with no shell magic.
         pass
 
-    if not cfg.cloudsql:
-        cnfdir = Path('/etc/my.cnf.d')
-        if not cnfdir.exists():
-            cnfdir = Path('/etc/mysql/conf.d')
-        (cnfdir/'mysql_slurm.cnf').write_text("""
-[mysqld]
-bind-address = 127.0.0.1
-""")
-        util.run('systemctl enable mariadb')
-        util.run('systemctl start mariadb')
-
-        mysql = "mysql -u root -e"
-        util.run(
-            f"""{mysql} "create user 'slurm'@'localhost'";""")
-        util.run(
-            f"""{mysql} "grant all on slurm_acct_db.* TO 'slurm'@'localhost'";""")
-        util.run(
-            f"""{mysql} "grant all on slurm_acct_db.* TO 'slurm'@'{CONTROL_MACHINE}'";""")
-
-    util.run("systemctl enable slurmdbd")
-    util.run("systemctl start slurmdbd")
-
-    # Wait for slurmdbd to come up
-    time.sleep(5)
-
-    sacctmgr = f"{dirs.prefix}/bin/sacctmgr -i"
-    util.run(f"{sacctmgr} add cluster {cfg.cluster_name}")
-
-    util.run("systemctl enable slurmctld")
-    util.run("systemctl start slurmctld")
-
-    util.run("systemctl enable slurmrestd")
-    util.run("systemctl start slurmrestd")
-
     # Export at the end to signal that everything is up
     util.run("systemctl enable nfs-server")
     util.run("systemctl start nfs-server")
 
     setup_nfs_exports()
-    setup_sync_cronjob()
 
     log.info("Done setting up controller")
     pass
@@ -702,19 +404,18 @@ def setup_login():
     """ run login node setup """
     setup_network_storage()
     mount_fstab()
-    util.run("systemctl restart munge")
 
     try:
         util.run(str(dirs.scripts/'custom-compute-install'))
     except Exception:
         # Ignore blank files with no shell magic.
         pass
+
     log.info("Done setting up login")
 
 
 def setup_compute():
     """ run compute node setup """
-    setup_nss_slurm()
     setup_network_storage()
     mount_fstab()
 
@@ -732,18 +433,12 @@ def setup_compute():
         # Ignore blank files with no shell magic.
         pass
 
-    setup_slurmd_cronjob()
-    util.run("systemctl restart munge")
-    util.run("systemctl enable slurmd")
-    util.run("systemctl start slurmd")
-
     log.info("Done setting up compute")
 
 
 def main():
 
     start_motd()
-    configure_dirs()
     install_meta_files()
 
     # call the setup function for the instance type

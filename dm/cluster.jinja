@@ -78,6 +78,8 @@ resources:
         - controller
     metadata:
       items:
+        - key: cluster-name
+          value: {{ properties['cluster_name'] }}
         - key: config
           value: {{ properties|safe|tojson(2) }}
         - key: enable-oslogin
@@ -97,27 +99,9 @@ resources:
         - key: util-script
           value: |
             {{ imports['util.py']|indent(12) }}
-        - key: slurm-resume
-          value: |
-            {{ imports['resume.py']|indent(12) }}
-        - key: slurm-suspend
-          value: |
-            {{ imports['suspend.py']|indent(12) }}
-        - key: slurmsync
-          value: |
-            {{ imports['slurmsync.py']|indent(12) }}
         - key: custom-controller-install
           value: |
             {{ imports['custom-controller-install']|indent(12) }}
-        - key: custom-compute-install
-          value: |
-            {{ imports['custom-compute-install']|indent(12) }}
-        - key: slurm_conf_tpl
-          value: |
-            {{ imports['slurm.conf.tpl']|indent(12) }}
-        - key: slurmdbd_conf_tpl
-          value: |
-            {{ imports['slurmdbd.conf.tpl']|indent(12) }}
         - key: cgroup_conf_tpl
           value: |
             {{ imports['cgroup.conf.tpl']|indent(12) }}
@@ -157,6 +141,8 @@ resources:
         - login
     metadata:
       items:
+        - key: cluster-name
+          value: {{ properties['cluster_name'] }}
         - key: config
           value: {{ properties|safe|tojson(2) }}
         - key: enable-oslogin
@@ -176,6 +162,9 @@ resources:
         - key: util-script
           value: |
             {{ imports['util.py']|indent(12) }}
+        - key: custom-compute-install
+          value: |
+            {{ imports['custom-compute-install']|indent(12) }}
 {% endfor %}
 
 {% for part in partitions %}
@@ -225,6 +214,8 @@ resources:
         - compute
     metadata:
       items:
+        - key: cluster-name
+          value: {{ properties['cluster_name'] }}
         - key: config
           value: {{ properties|safe|tojson(2) }}
         - key: enable-oslogin

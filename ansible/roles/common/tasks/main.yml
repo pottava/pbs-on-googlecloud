@@ -24,3 +24,9 @@
     - unzip
     - screen
     - python3-pip
+    - perl-Switch
+    - make
+    - hwloc-devel
+    - openssl-devel
+    - libevent-devel
+    - openmpi3-devel

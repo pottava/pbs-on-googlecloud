@@ -1,0 +1,12 @@
+#!/bin/sh
+
+sed -ie "s|PermitRootLogin no|PermitRootLogin yes|" /etc/ssh/sshd_config
+systemctl restart sshd
+
+cat << EOF > /root/.ssh/config
+Host *
+StrictHostKeyChecking no
+UserKnownHostsFile /dev/null
+EOF
+chmod 600 /root/.ssh/config
+chmod 700 /root/.ssh

@@ -1,6 +1,6 @@
 [login]
-localhost ansible_connection=local
 
 [head]
+localhost ansible_connection=local
 
 [compute]

@@ -28,6 +28,9 @@ if ( ! ping -q -w1 -c1 $PING_HOST > /dev/null ) ; then
 	echo No internet access detected
 fi
 
+yum install -y wget git nfs-utils python3
+pip3 install --upgrade google-api-python-client PyYAML
+
 SETUP_SCRIPT="setup.py"
 SETUP_META="setup-script"
 DIR="/tmp"

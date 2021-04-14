@@ -1,9 +1,9 @@
 imports:
-- path: slurm-cluster.jinja
+- path: cluster.jinja
 
 resources:
 - name: resources
-  type: slurm-cluster.jinja
+  type: cluster.jinja
   properties:
     cluster_name : hpc
     vpc_net      : hpc-vpc
@@ -11,7 +11,7 @@ resources:
     zone         : asia-northeast1-c
 
     # ヘッドノード
-    controller_image                  : projects/schedmd-slurm-public/global/images/family/schedmd-slurm-20-11-4-hpc-centos-7
+    controller_image                  : projects/cloud-hpc-image-public/global/images/family/hpc-centos-7
     controller_machine_type           : n2-standard-16
     controller_disk_size_gb           : 30
     controller_secondary_disk         : True
@@ -20,10 +20,11 @@ resources:
     external_controller_ip            : False
 
     # ログインノード
-    login_image        : projects/schedmd-slurm-public/global/images/family/schedmd-slurm-20-11-4-hpc-centos-7
-    login_machine_type : n1-standard-2
+    login_image        : projects/cloud-hpc-image-public/global/images/family/hpc-centos-7
+    login_machine_type : n2-standard-2
     login_disk_size_gb : 30
     login_node_count   : 1
+    login_node_scopes  : ["https://www.googleapis.com/auth/compute.readonly"]
     external_login_ips : True
 
     # 計算クラスタ
@@ -31,7 +32,7 @@ resources:
 
     partitions:
       - name               : partition1
-        image              : projects/schedmd-slurm-public/global/images/family/schedmd-slurm-20-11-4-hpc-centos-7
+        image              : projects/cloud-hpc-image-public/global/images/family/hpc-centos-7
         image_hyperthreads : False
         machine_type       : c2-standard-4
         static_node_count  : 2
@@ -39,4 +40,3 @@ resources:
         vpc_subnet         : hpc-tokyo
         zone               : asia-northeast1-c
         exclusive          : False
-        enable_placement   : False
